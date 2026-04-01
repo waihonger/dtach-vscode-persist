@@ -3,3 +3,8 @@ dist/
 out/
 *.vsix
 .DS_Store
+
+# Design docs (local reference, not published)
+PLAN-*.md
+LEARNINGS.md
+SPECS.md
