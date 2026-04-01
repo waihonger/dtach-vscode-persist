@@ -1,0 +1,55 @@
+{
+  "name": "dtach-persist",
+  "displayName": "dtach-persist",
+  "description": "Persistent terminal sessions with native scroll — powered by dtach",
+  "version": "0.1.0",
+  "publisher": "fongy",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onTerminalProfile:dtach-persist.terminal"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "terminal": {
+      "profiles": [
+        {
+          "id": "dtach-persist.terminal",
+          "title": "dtach terminal"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "dtach-persist.newTerminal",
+        "title": "New Persistent Terminal",
+        "category": "dtach-persist"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --sourcemap",
+    "watch": "npm run compile -- --watch",
+    "vscode:prepublish": "npm run compile -- --minify",
+    "package": "vsce package",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
+  }
+}
