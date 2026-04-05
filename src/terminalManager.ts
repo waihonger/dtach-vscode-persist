@@ -21,11 +21,15 @@ export class TerminalManager {
   private readonly pendingKills = new Map<number, NodeJS.Timeout>();
   private readonly disposables: vscode.Disposable[] = [];
   private disposing = false;
+  private savedNames: Record<string, string> = {};
 
   constructor(socketDir: string, startDir: string, log: vscode.OutputChannel) {
     this.socketDir = socketDir;
     this.startDir = startDir;
     this.log = log;
+
+    // Load saved names before any terminals are created
+    this.savedNames = this.loadNames();
   }
 
   private get namesPath(): string {
@@ -41,10 +45,11 @@ export class TerminalManager {
   }
 
   private saveNames(): void {
-    const names: Record<string, string> = {};
+    const names: Record<string, string> = { ...this.savedNames };
     for (const [terminal, index] of this.terminalToIndex) {
       names[index] = terminal.name;
     }
+    this.savedNames = names;
     try {
       fs.writeFileSync(this.namesPath, JSON.stringify(names));
     } catch {
@@ -105,20 +110,22 @@ export class TerminalManager {
 
   restoreTerminals(): void {
     const sockets = listSockets(this.socketDir);
-    const names = this.loadNames();
-    this.log.appendLine(`Restoring ${sockets.length} terminal(s)`);
+    this.log.appendLine(`Restoring terminal(s), names: ${JSON.stringify(this.savedNames)}`);
 
     for (const info of sockets) {
-      this.createTerminalForSocket(info, false, names[info.index]);
+      if (this.indexToTerminal.has(info.index)) {
+        this.log.appendLine(`Socket ${info.index} already attached — skipping`);
+        continue;
+      }
+      const savedName = this.savedNames[info.index];
+      this.log.appendLine(`Socket ${info.index} → name: ${savedName || "(default)"}`);
+      this.createTerminalForSocket(info, false, savedName);
     }
   }
 
   private onTerminalClosed(terminal: vscode.Terminal): void {
     const index = this.terminalToIndex.get(terminal);
     if (index === undefined) return;
-
-    // Save names before removing from maps so the closing terminal is included
-    this.saveNames();
 
     this.terminalToIndex.delete(terminal);
     this.indexToTerminal.delete(index);
@@ -153,6 +160,12 @@ export class TerminalManager {
     });
     this.disposables.push(openDisposable);
     context.subscriptions.push(openDisposable);
+
+    const activeDisposable = vscode.window.onDidChangeActiveTerminal(() => {
+      this.saveNames();
+    });
+    this.disposables.push(activeDisposable);
+    context.subscriptions.push(activeDisposable);
   }
 
   private tryAdoptTerminal(terminal: vscode.Terminal): void {
@@ -183,6 +196,10 @@ export class TerminalManager {
 
   isTracked(terminal: vscode.Terminal): boolean {
     return this.terminalToIndex.has(terminal);
+  }
+
+  getSavedName(index: number): string | undefined {
+    return this.savedNames[index];
   }
 
   setDisposing(): void {
