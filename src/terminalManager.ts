@@ -117,6 +117,9 @@ export class TerminalManager {
     const index = this.terminalToIndex.get(terminal);
     if (index === undefined) return;
 
+    // Save names before removing from maps so the closing terminal is included
+    this.saveNames();
+
     this.terminalToIndex.delete(terminal);
     this.indexToTerminal.delete(index);
 
