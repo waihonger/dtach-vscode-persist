@@ -110,15 +110,9 @@ export class TerminalManager {
 
   restoreTerminals(): void {
     const sockets = listSockets(this.socketDir);
-    this.log.appendLine(`Restoring terminal(s), names: ${JSON.stringify(this.savedNames)}`);
-
     for (const info of sockets) {
-      if (this.indexToTerminal.has(info.index)) {
-        this.log.appendLine(`Socket ${info.index} already attached — skipping`);
-        continue;
-      }
+      if (this.indexToTerminal.has(info.index)) continue;
       const savedName = this.savedNames[info.index];
-      this.log.appendLine(`Socket ${info.index} → name: ${savedName || "(default)"}`);
       this.createTerminalForSocket(info, false, savedName);
     }
   }

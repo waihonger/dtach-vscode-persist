@@ -88,15 +88,12 @@ export async function activate(
   const sockets = listSockets(socketDir);
   if (sockets.length > 0) {
     // Queue sockets for the profile provider — VS Code will request one
-    // terminal via the provider after activate() returns. The provider serves
-    // an existing socket instead of creating new, so no rogue terminal.
-    // We restore the remaining sockets ourselves.
+    // via the provider after activate() returns (serving an existing socket).
+    // We restore the remaining sockets after VS Code settles.
     pendingRestoreSockets = [...sockets];
     log.appendLine(`Found ${sockets.length} existing socket(s) — queued for restore`);
-    terminalManager.restoreTerminals();
 
-    // Close rogue non-dtach terminals (e.g. plain zsh) that VS Code created
-    // before the extension activated
+    // Close any pre-existing rogue non-dtach terminals
     for (const t of vscode.window.terminals) {
       if (!terminalManager!.isTracked(t)) {
         log.appendLine("Closing pre-existing rogue terminal");
@@ -104,14 +101,20 @@ export async function activate(
       }
     }
 
-    // Also catch any that open after activate returns
+    // After VS Code creates the first terminal via the provider,
+    // restore remaining sockets and clean up
     const rogueWatcher = vscode.window.onDidOpenTerminal((t) => {
       if (!terminalManager!.isTracked(t)) {
         log.appendLine("Closing rogue terminal");
         t.dispose();
       }
     });
-    setTimeout(() => rogueWatcher.dispose(), 2000);
+    setTimeout(() => {
+      terminalManager!.restoreTerminals();
+      pendingRestoreSockets = [];
+      rogueWatcher.dispose();
+      log.appendLine("Restore complete, provider queue cleared");
+    }, 500);
   }
 
   log.appendLine("dtach-persist activated");
