@@ -48,23 +48,17 @@ Download the `.vsix` from [Releases](https://github.com/waihonger/dtach-vscode-p
 code --install-extension dtach-persist-0.1.0.vsix
 ```
 
-### 3. Configure VS Code settings
+### 3. Set as default terminal (optional)
 
-Add to your VS Code `settings.json` (`Cmd+Shift+P` → "Preferences: Open User Settings (JSON)"):
+Add to your VS Code `settings.json`:
 
 ```json
 {
-  "terminal.integrated.defaultProfile.osx": "dtach terminal",
-  "terminal.integrated.enablePersistentSessions": false,
-  "terminal.integrated.launchOnStartup": false
+  "terminal.integrated.defaultProfile.osx": "dtach terminal"
 }
 ```
 
-- **`defaultProfile.osx`** — makes every new terminal use dtach automatically
-- **`enablePersistentSessions`** — disables VS Code's built-in session restore (dtach handles this)
-- **`launchOnStartup`** — prevents VS Code from spawning a rogue terminal on startup
-
-The extension auto-sets the last two on activation, but adding them explicitly ensures correct behavior from the first launch.
+Now every new terminal is automatically persistent. No other settings are needed — the extension handles rogue terminal cleanup automatically.
 
 ## Usage
 
@@ -100,7 +94,7 @@ The extension auto-sets the last two on activation, but adding them explicitly e
 
 ## Technical details
 
-- **Auto-disables conflicting settings**: on activation, the extension sets `terminal.integrated.enablePersistentSessions` and `terminal.integrated.launchOnStartup` to `false` to prevent VS Code from creating duplicate or rogue terminals alongside dtach-restored ones
+- **Rogue terminal cleanup**: on startup, VS Code auto-creates a terminal to fill the panel before extensions activate. When restoring dtach sockets, the extension detects and closes these rogue terminals automatically
 - **Socket dir**: `$TMPDIR/dtach-persist/<workspace-hash>/` with one `.sock` file per terminal tab
 - **Workspace isolation**: folder name + 6-char SHA256 hash of full path prevents collisions between same-named folders
 - **Shutdown detection**: 300ms debounce distinguishes "user closed a tab" (kill socket) from "VS Code shutting down" (preserve all sockets)

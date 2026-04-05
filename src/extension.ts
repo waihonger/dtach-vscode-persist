@@ -72,18 +72,17 @@ export async function activate(
     },
   });
 
-  // Auto-restore existing sockets
+  // Auto-restore existing sockets, closing any rogue terminals VS Code
+  // auto-created to fill the empty panel before the extension activated
   const sockets = listSockets(socketDir);
   if (sockets.length > 0) {
-    log.appendLine(`Found ${sockets.length} existing socket(s) — restoring`);
+    const rogueTerminals = [...vscode.window.terminals];
+    log.appendLine(`Found ${sockets.length} existing socket(s) — restoring (closing ${rogueTerminals.length} rogue terminal(s))`);
     terminalManager.restoreTerminals();
+    for (const t of rogueTerminals) {
+      t.dispose();
+    }
   }
-
-  // Disable VS Code's built-in terminal persistence and auto-launch
-  // to prevent duplicate/rogue terminals on restart (see GitHub issue #1)
-  const terminalConfig = vscode.workspace.getConfiguration("terminal.integrated");
-  await terminalConfig.update("enablePersistentSessions", false, vscode.ConfigurationTarget.Global);
-  await terminalConfig.update("launchOnStartup", false, vscode.ConfigurationTarget.Global);
 
   log.appendLine("dtach-persist activated");
 }
