@@ -1,7 +1,6 @@
 import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
-import * as net from "net";
 import { socketPath } from "./config";
 import type { SocketInfo } from "./types";
 
@@ -56,39 +55,13 @@ export function listSockets(dir: string): SocketInfo[] {
         return { index, socketPath: path.join(dir, f) };
       })
       .filter((s): s is SocketInfo => s !== null)
-      .filter((s) => isSocketAlive(s.socketPath))
+      .filter((s) => socketFileExists(s.socketPath))
       .sort((a, b) => a.index - b.index);
   } catch {
     return [];
   }
 }
 
-export function isSocketAlive(sockPath: string): boolean {
-  try {
-    fs.statSync(sockPath);
-  } catch {
-    return false;
-  }
-  // Try connecting to verify the dtach process is still listening
-  return new Promise<boolean>((resolve) => {
-    const sock = net.createConnection(sockPath);
-    const timeout = setTimeout(() => {
-      sock.destroy();
-      resolve(false);
-    }, 200);
-    sock.on("connect", () => {
-      clearTimeout(timeout);
-      sock.destroy();
-      resolve(true);
-    });
-    sock.on("error", () => {
-      clearTimeout(timeout);
-      resolve(false);
-    });
-  }) as unknown as boolean;
-}
-
-// Synchronous check: just verify the socket file exists
 export function socketFileExists(sockPath: string): boolean {
   try {
     fs.statSync(sockPath);

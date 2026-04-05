@@ -28,12 +28,6 @@ export async function activate(
   }
   log.appendLine(`dtach binary: ${binary}`);
 
-  // Disable VS Code's built-in terminal persistence and auto-launch
-  // to prevent duplicate/rogue terminals on restart (see GitHub issue #1)
-  const terminalConfig = vscode.workspace.getConfiguration("terminal.integrated");
-  await terminalConfig.update("enablePersistentSessions", false, vscode.ConfigurationTarget.Global);
-  await terminalConfig.update("launchOnStartup", false, vscode.ConfigurationTarget.Global);
-
   const socketDir = resolveSocketDir();
   const startDir = resolveStartDirectory();
   log.appendLine(`Socket dir: ${socketDir}`);
@@ -44,10 +38,10 @@ export async function activate(
 
   terminalManager = new TerminalManager(socketDir, startDir, log);
 
-  // Register event handlers first
+  // Register synchronous providers, commands, and event handlers before any
+  // async work so VS Code can resolve the profile immediately on startup
   terminalManager.registerEventHandlers(context);
 
-  // Register terminal profile provider
   context.subscriptions.push(
     vscode.window.registerTerminalProfileProvider("dtach-persist.terminal", {
       provideTerminalProfile: () => {
@@ -66,14 +60,12 @@ export async function activate(
     }),
   );
 
-  // Register commands
   context.subscriptions.push(
     vscode.commands.registerCommand("dtach-persist.newTerminal", () =>
       terminalManager!.createNewTerminal(),
     ),
   );
 
-  // Dispose handler for shutdown detection
   context.subscriptions.push({
     dispose: () => {
       terminalManager?.setDisposing();
@@ -86,6 +78,12 @@ export async function activate(
     log.appendLine(`Found ${sockets.length} existing socket(s) — restoring`);
     terminalManager.restoreTerminals();
   }
+
+  // Disable VS Code's built-in terminal persistence and auto-launch
+  // to prevent duplicate/rogue terminals on restart (see GitHub issue #1)
+  const terminalConfig = vscode.workspace.getConfiguration("terminal.integrated");
+  await terminalConfig.update("enablePersistentSessions", false, vscode.ConfigurationTarget.Global);
+  await terminalConfig.update("launchOnStartup", false, vscode.ConfigurationTarget.Global);
 
   log.appendLine("dtach-persist activated");
 }
