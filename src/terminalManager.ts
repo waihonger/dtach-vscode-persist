@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as path from "path";
 import * as vscode from "vscode";
 import { KILL_SOCKET_DELAY_MS, socketPath } from "./config";
 import {
@@ -26,7 +28,31 @@ export class TerminalManager {
     this.log = log;
   }
 
-  createTerminalForSocket(info: SocketInfo, show = false): vscode.Terminal {
+  private get namesPath(): string {
+    return path.join(this.socketDir, "names.json");
+  }
+
+  private loadNames(): Record<string, string> {
+    try {
+      return JSON.parse(fs.readFileSync(this.namesPath, "utf8"));
+    } catch {
+      return {};
+    }
+  }
+
+  private saveNames(): void {
+    const names: Record<string, string> = {};
+    for (const [terminal, index] of this.terminalToIndex) {
+      names[index] = terminal.name;
+    }
+    try {
+      fs.writeFileSync(this.namesPath, JSON.stringify(names));
+    } catch {
+      // socket dir may be gone
+    }
+  }
+
+  createTerminalForSocket(info: SocketInfo, show = false, name?: string): vscode.Terminal {
     const pendingKill = this.pendingKills.get(info.index);
     if (pendingKill) {
       clearTimeout(pendingKill);
@@ -35,7 +61,7 @@ export class TerminalManager {
 
     const binary = findDtachBinary()!;
     const terminal = vscode.window.createTerminal({
-      name: `Terminal ${info.index + 1}`,
+      name: name || `Terminal ${info.index + 1}`,
       shellPath: binary,
       shellArgs: ["-a", info.socketPath, "-E"],
       isTransient: true,
@@ -79,10 +105,11 @@ export class TerminalManager {
 
   restoreTerminals(): void {
     const sockets = listSockets(this.socketDir);
+    const names = this.loadNames();
     this.log.appendLine(`Restoring ${sockets.length} terminal(s)`);
 
     for (const info of sockets) {
-      this.createTerminalForSocket(info);
+      this.createTerminalForSocket(info, false, names[info.index]);
     }
   }
 
@@ -157,11 +184,12 @@ export class TerminalManager {
 
   setDisposing(): void {
     this.disposing = true;
+    this.saveNames();
     for (const timeout of this.pendingKills.values()) {
       clearTimeout(timeout);
     }
     this.pendingKills.clear();
-    this.log.appendLine("Disposing — all pending kills cancelled");
+    this.log.appendLine("Disposing — names saved, all pending kills cancelled");
   }
 
   disposeAll(): void {
