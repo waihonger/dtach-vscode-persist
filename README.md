@@ -48,17 +48,23 @@ Download the `.vsix` from [Releases](https://github.com/waihonger/dtach-vscode-p
 code --install-extension dtach-persist-0.1.0.vsix
 ```
 
-### 3. Set as default terminal (optional)
+### 3. Configure VS Code settings
 
-Add to your VS Code `settings.json`:
+Add to your VS Code `settings.json` (`Cmd+Shift+P` → "Preferences: Open User Settings (JSON)"):
 
 ```json
 {
-  "terminal.integrated.defaultProfile.osx": "dtach terminal"
+  "terminal.integrated.defaultProfile.osx": "dtach terminal",
+  "terminal.integrated.enablePersistentSessions": false,
+  "terminal.integrated.launchOnStartup": false
 }
 ```
 
-Now every new terminal is automatically persistent.
+- **`defaultProfile.osx`** — makes every new terminal use dtach automatically
+- **`enablePersistentSessions`** — disables VS Code's built-in session restore (dtach handles this)
+- **`launchOnStartup`** — prevents VS Code from spawning a rogue terminal on startup
+
+The extension auto-sets the last two on activation, but adding them explicitly ensures correct behavior from the first launch.
 
 ## Usage
 
