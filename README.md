@@ -94,6 +94,7 @@ Now every new terminal is automatically persistent.
 
 ## Technical details
 
+- **Auto-disables conflicting settings**: on activation, the extension sets `terminal.integrated.enablePersistentSessions` and `terminal.integrated.launchOnStartup` to `false` to prevent VS Code from creating duplicate or rogue terminals alongside dtach-restored ones
 - **Socket dir**: `$TMPDIR/dtach-persist/<workspace-hash>/` with one `.sock` file per terminal tab
 - **Workspace isolation**: folder name + 6-char SHA256 hash of full path prevents collisions between same-named folders
 - **Shutdown detection**: 300ms debounce distinguishes "user closed a tab" (kill socket) from "VS Code shutting down" (preserve all sockets)

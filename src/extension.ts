@@ -28,6 +28,12 @@ export async function activate(
   }
   log.appendLine(`dtach binary: ${binary}`);
 
+  // Disable VS Code's built-in terminal persistence and auto-launch
+  // to prevent duplicate/rogue terminals on restart (see GitHub issue #1)
+  const terminalConfig = vscode.workspace.getConfiguration("terminal.integrated");
+  await terminalConfig.update("enablePersistentSessions", false, vscode.ConfigurationTarget.Global);
+  await terminalConfig.update("launchOnStartup", false, vscode.ConfigurationTarget.Global);
+
   const socketDir = resolveSocketDir();
   const startDir = resolveStartDirectory();
   log.appendLine(`Socket dir: ${socketDir}`);
