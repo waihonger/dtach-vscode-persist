@@ -2,7 +2,7 @@
   "name": "dtach-persist",
   "displayName": "dtach-persist",
   "description": "Persistent terminal sessions with native scroll — powered by dtach",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "fongy",
   "license": "MIT",
   "engines": {

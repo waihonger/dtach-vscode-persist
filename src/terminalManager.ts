@@ -151,6 +151,10 @@ export class TerminalManager {
     this.log.appendLine(`Adopted profile-created terminal for socket ${index}`);
   }
 
+  isTracked(terminal: vscode.Terminal): boolean {
+    return this.terminalToIndex.has(terminal);
+  }
+
   setDisposing(): void {
     this.disposing = true;
     for (const timeout of this.pendingKills.values()) {

@@ -11,6 +11,7 @@ import { resolveSocketDir, resolveStartDirectory, socketPath } from "./config";
 import { TerminalManager } from "./terminalManager";
 
 let terminalManager: TerminalManager | undefined;
+let suppressProfileCreation = false;
 
 export async function activate(
   context: vscode.ExtensionContext,
@@ -45,6 +46,10 @@ export async function activate(
   context.subscriptions.push(
     vscode.window.registerTerminalProfileProvider("dtach-persist.terminal", {
       provideTerminalProfile: () => {
+        if (suppressProfileCreation) {
+          log.appendLine("Profile provider suppressed during restore");
+          return undefined;
+        }
         ensureSocketDir(socketDir);
         const index = findNextIndex(socketDir);
         const sockPath = socketPath(socketDir, index);
@@ -72,16 +77,30 @@ export async function activate(
     },
   });
 
-  // Auto-restore existing sockets, closing any rogue terminals VS Code
-  // auto-created to fill the empty panel before the extension activated
+  // Auto-restore existing sockets
   const sockets = listSockets(socketDir);
   if (sockets.length > 0) {
-    const rogueTerminals = [...vscode.window.terminals];
-    log.appendLine(`Found ${sockets.length} existing socket(s) — restoring (closing ${rogueTerminals.length} rogue terminal(s))`);
+    // Suppress the profile provider so VS Code can't create a rogue terminal
+    // via our dtach profile while we're restoring existing sockets
+    suppressProfileCreation = true;
+    log.appendLine(`Found ${sockets.length} existing socket(s) — restoring`);
     terminalManager.restoreTerminals();
-    for (const t of rogueTerminals) {
-      t.dispose();
-    }
+
+    // Lift suppression after VS Code has settled — profile provider calls
+    // happen after activate() returns, so the timeout keeps it suppressed
+    // long enough to block the rogue, then re-enables for manual creation
+    setTimeout(() => {
+      suppressProfileCreation = false;
+      log.appendLine("Profile provider re-enabled");
+
+      // Also close any non-dtach rogue terminals (e.g. plain shell fallback)
+      for (const t of vscode.window.terminals) {
+        if (!terminalManager!.isTracked(t)) {
+          log.appendLine("Closing rogue non-dtach terminal");
+          t.dispose();
+        }
+      }
+    }, 1000);
   }
 
   log.appendLine("dtach-persist activated");
