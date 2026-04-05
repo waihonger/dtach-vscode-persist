@@ -111,6 +111,7 @@ export async function activate(
     });
     setTimeout(() => {
       terminalManager!.restoreTerminals();
+      terminalManager!.showFirst();
       pendingRestoreSockets = [];
       rogueWatcher.dispose();
       log.appendLine("Restore complete, provider queue cleared");

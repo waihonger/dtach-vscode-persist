@@ -192,6 +192,11 @@ export class TerminalManager {
     return this.terminalToIndex.has(terminal);
   }
 
+  showFirst(): void {
+    const first = this.indexToTerminal.values().next().value;
+    if (first) first.show();
+  }
+
   getSavedName(index: number): string | undefined {
     return this.savedNames[index];
   }
