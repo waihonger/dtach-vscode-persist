@@ -9,3 +9,6 @@ esbuild.mjs
 vitest.config.ts
 **/*.test.ts
 **/*.map
+LEARNINGS.md
+PLAN-*.md
+SPECS.md
