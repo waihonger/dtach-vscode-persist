@@ -92,6 +92,46 @@ Now every new terminal is automatically persistent. No other settings are needed
 | **Architecture** | One socket per tab | Sessions, windows, panes, linked sessions |
 | **Extension size** | ~6KB | ~10KB+ |
 
+## Claude Code notifications
+
+Know when Claude Code finishes a task without checking each terminal tab.
+
+### In-window (built-in)
+
+The extension watches for signal files and shows a status bar indicator:
+- **"● N awaiting"** appears when terminals finish in the background
+- Click to see a list of awaiting terminals and jump to one
+- Signals auto-clear when you switch to a terminal or after 15 minutes
+
+### Cross-window (CC Overlord)
+
+For notifications across all VS Code windows, install [CC Overlord](https://github.com/waihonger/cc-overlord) — a macOS menu bar companion app.
+
+### Setup
+
+Add the Claude Code Stop hook to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "test -n \"$DTACH_SIGNAL_DIR\" && test -n \"$DTACH_SOCKET_INDEX\" && touch \"$DTACH_SIGNAL_DIR/$DTACH_SOCKET_INDEX.signal\" || true",
+            "timeout": 1000
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Note:** Only terminals created after installing v0.2.0+ have the required env vars. Existing terminals need to be closed and reopened once.
+
 ## Technical details
 
 - **Rogue terminal cleanup**: on startup, VS Code auto-creates a terminal to fill the panel before extensions activate. When restoring dtach sockets, the extension detects and closes these rogue terminals automatically
