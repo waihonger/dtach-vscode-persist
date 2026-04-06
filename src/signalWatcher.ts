@@ -42,10 +42,12 @@ export class SignalWatcher {
     // Pick up any existing signals
     this.scanSignals();
 
-    // Watch for new signals
+    // Watch for new signals and goto requests
     try {
       this.watcher = fs.watch(this.signalDir, (_, filename) => {
-        if (filename && filename.endsWith(".signal")) {
+        if (filename === "goto") {
+          this.onGotoFile();
+        } else if (filename && filename.endsWith(".signal")) {
           this.onSignalFile(filename);
         }
       });
@@ -70,6 +72,22 @@ export class SignalWatcher {
         }
       }),
     );
+  }
+
+  private onGotoFile(): void {
+    const gotoPath = path.join(this.signalDir, "goto");
+    try {
+      const content = fs.readFileSync(gotoPath, "utf8").trim();
+      const index = parseInt(content, 10);
+      if (!isNaN(index)) {
+        this.log.appendLine(`Goto request for terminal ${index}`);
+        this.terminalManager.showTerminal(index);
+        this.clearSignal(index);
+      }
+      fs.unlinkSync(gotoPath);
+    } catch {
+      // file may have been deleted
+    }
   }
 
   private scanSignals(): void {
