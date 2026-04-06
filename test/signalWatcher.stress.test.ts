@@ -100,7 +100,7 @@ describe("Stress: Signal flood (20 signals in <100ms)", () => {
     // The internal map should have exactly 1 entry for index 3
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
     expect(signals.size).toBe(1);
-    expect(signals.has(3)).toBe(true);
+    expect(signals.has("3:complete")).toBe(true);
 
     watcher.dispose();
     ctx.dispose();
@@ -129,17 +129,17 @@ describe("Stress: Signal flood (20 signals in <100ms)", () => {
     ctx.dispose();
   });
 
-  it("fs.watch coalescing: individual onSignalFile calls still work per-event", () => {
+  it("fs.watch coalescing: individual onFile calls still work per-event", () => {
     const mgr = makeManager(socketDir);
     const log = vscodeWindow.createOutputChannel("test") as import("vscode").OutputChannel;
     const watcher = new SignalWatcher(sigDir, mgr, log);
     const ctx = mockContext();
     watcher.start(ctx);
 
-    // Simulate 5 files, each triggering onSignalFile directly (no coalescing)
+    // Simulate 5 files, each triggering onFile directly (no coalescing)
     for (let i = 0; i < 5; i++) {
       touchSignal(sigDir, i);
-      (watcher as unknown as { onSignalFile: (f: string) => void }).onSignalFile(`${i}.signal`);
+      (watcher as unknown as { onFile: (f: string) => void }).onFile(`${i}.signal`);
     }
 
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
@@ -188,7 +188,7 @@ describe("Stress: Socket index reuse after close", () => {
     // BUG: The signal is within the 15-minute freshness window, so it gets
     // picked up. There is no mechanism to correlate a signal to the terminal
     // session that created it. New terminal 3 inherits old terminal 3's signal.
-    expect(signals.has(3)).toBe(true); // This PASSES — proving the bug exists
+    expect(signals.has("3:complete")).toBe(true); // This PASSES — proving the bug exists
 
     watcher.dispose();
     ctx.dispose();
@@ -260,7 +260,7 @@ describe("Stress: TMPDIR cleanup wipes everything", () => {
     // longer have files on disk. The old signal for index 0 remains in the Map.
     // This is a phantom signal — the file is gone but the in-memory state persists.
     expect(signals.size).toBe(1); // PASSES — proving the phantom signal bug
-    expect(signals.has(0)).toBe(true); // The stale entry is still there
+    expect(signals.has("0:complete")).toBe(true); // The stale entry is still there
   });
 
   it("watcher recovers when directory is recreated", () => {
@@ -280,7 +280,7 @@ describe("Stress: TMPDIR cleanup wipes everything", () => {
 
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
     // Should pick up the new signal (poll-based recovery)
-    expect(signals.has(5)).toBe(true);
+    expect(signals.has("5:complete")).toBe(true);
 
     watcher.dispose();
     ctx.dispose();
@@ -380,16 +380,16 @@ describe("Stress: Very long running session (memory/FD leak)", () => {
 
     // Add a signal that is 16 minutes old (past 15-min stale threshold)
     touchSignalWithAge(sigDir, 42, 16 * 60 * 1000);
-    (watcher as unknown as { onSignalFile: (f: string) => void }).onSignalFile("42.signal");
+    (watcher as unknown as { onFile: (f: string) => void }).onFile("42.signal");
 
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
-    // onSignalFile already checks stale threshold and won't add it
-    expect(signals.has(42)).toBe(false);
+    // onFile already checks stale threshold and won't add it
+    expect(signals.has("42:complete")).toBe(false);
 
     // But a 14-minute-old signal WILL be added and stay until updateStatusBar runs
     touchSignalWithAge(sigDir, 43, 14 * 60 * 1000);
-    (watcher as unknown as { onSignalFile: (f: string) => void }).onSignalFile("43.signal");
-    expect(signals.has(43)).toBe(true);
+    (watcher as unknown as { onFile: (f: string) => void }).onFile("43.signal");
+    expect(signals.has("43:complete")).toBe(true);
 
     watcher.dispose();
     ctx.dispose();
@@ -462,7 +462,7 @@ describe("Stress: Signal file with unexpected content or name", () => {
 
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
     // foo and bar are NaN → filtered. 3.5 parses as 3 → accepted.
-    expect(signals.has(3)).toBe(true);
+    expect(signals.has("3:complete")).toBe(true);
     expect(signals.size).toBe(1); // Only the "3.5" parsed as 3
 
     watcher.dispose();
@@ -483,8 +483,8 @@ describe("Stress: Signal file with unexpected content or name", () => {
     (watcher as unknown as { scanSignals: () => void }).scanSignals();
 
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
-    expect(signals.has(0)).toBe(true);
-    expect(signals.has(1)).toBe(true);
+    expect(signals.has("0:complete")).toBe(true);
+    expect(signals.has("1:complete")).toBe(true);
 
     watcher.dispose();
     ctx.dispose();
@@ -602,20 +602,20 @@ describe("Stress: Concurrent VS Code windows same workspace", () => {
     const signals1 = (watcher1 as unknown as { signals: Map<number, unknown> }).signals;
     const signals2 = (watcher2 as unknown as { signals: Map<number, unknown> }).signals;
 
-    expect(signals1.has(0)).toBe(true);
-    expect(signals2.has(0)).toBe(true);
+    expect(signals1.has("0:complete")).toBe(true);
+    expect(signals2.has("0:complete")).toBe(true);
 
     // Window A clears the signal (user clicks status bar)
-    (watcher1 as unknown as { clearSignal: (i: number) => void }).clearSignal(0);
+    (watcher1 as unknown as { clearSignal: (i: number, t: string) => void }).clearSignal(0, "complete");
 
-    expect(signals1.has(0)).toBe(false);
+    expect(signals1.has("0:complete")).toBe(false);
     // Window B still has the phantom signal (before scan)
-    expect(signals2.has(0)).toBe(true);
+    expect(signals2.has("0:complete")).toBe(true);
 
     // After scan, window B's phantom is pruned (scanSignals now reconciles)
     (watcher2 as unknown as { scanSignals: () => void }).scanSignals();
     // FIXED: scanSignals reconciles Map with disk, removing phantom entries
-    expect(signals2.has(0)).toBe(false);
+    expect(signals2.has("0:complete")).toBe(false);
 
     watcher1.dispose();
     watcher2.dispose();
@@ -725,7 +725,7 @@ describe("Stress: Signal auto-clear when terminal is active", () => {
    * ATTACK: A signal arrives for terminal 3, but terminal 3 is already
    * the active terminal. The signal should be auto-cleared.
    *
-   * Verdict: PASSES — onSignalFile checks activeTerminal and activeIndex.
+   * Verdict: PASSES — onFile checks activeTerminal and activeIndex.
    * If the signal's index matches the active terminal, it deletes the file
    * and returns without adding to the Map.
    */
@@ -765,11 +765,11 @@ describe("Stress: Signal auto-clear when terminal is active", () => {
 
     // Touch signal for index 3
     touchSignal(sigDir, 3);
-    (watcher as unknown as { onSignalFile: (f: string) => void }).onSignalFile("3.signal");
+    (watcher as unknown as { onFile: (f: string) => void }).onFile("3.signal");
 
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
     // Signal should have been auto-cleared since terminal 3 is active
-    expect(signals.has(3)).toBe(false);
+    expect(signals.has("3:complete")).toBe(false);
 
     // Signal file should also be deleted
     expect(fs.existsSync(path.join(sigDir, "3.signal"))).toBe(false);
@@ -848,7 +848,7 @@ describe("Stress: clearSignal does not call updateStatusBar", () => {
     _onDidChangeActiveTerminal.fire(fakeTerminal);
 
     // Signal 0 is cleared from Map
-    expect(signals.has(0)).toBe(false);
+    expect(signals.has("0:complete")).toBe(false);
     expect(signals.size).toBe(1);
 
     // But we can't directly test the status bar text from here since
@@ -895,7 +895,7 @@ describe("Stress: Rapid terminal close-reopen with pending kill", () => {
     (watcher as unknown as { scanSignals: () => void }).scanSignals();
 
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
-    expect(signals.has(2)).toBe(true);
+    expect(signals.has("2:complete")).toBe(true);
 
     // Terminal is closed and reopened — signal file is untouched by either event
     expect(fs.existsSync(path.join(sigDir, "2.signal"))).toBe(true);
@@ -951,9 +951,9 @@ describe("Stress: cc-overlord deriveProjectName edge cases", () => {
 describe("Stress: Signal race between touch and stat", () => {
   /**
    * ATTACK: Signal file is deleted between readdirSync and statSync
-   * in scanSignals → onSignalFile.
+   * in scanSignals → onFile.
    *
-   * Verdict: PASSES — onSignalFile wraps statSync in try/catch and
+   * Verdict: PASSES — onFile wraps statSync in try/catch and
    * returns early if the file is gone. No crash.
    */
 
@@ -966,7 +966,7 @@ describe("Stress: Signal race between touch and stat", () => {
   });
   afterEach(() => { fs.rmSync(socketDir, { recursive: true, force: true }); });
 
-  it("onSignalFile handles deleted file between readdir and stat", () => {
+  it("onFile handles deleted file between readdir and stat", () => {
     const mgr = makeManager(socketDir);
     const log = vscodeWindow.createOutputChannel("test") as import("vscode").OutputChannel;
     const watcher = new SignalWatcher(sigDir, mgr, log);
@@ -975,11 +975,11 @@ describe("Stress: Signal race between touch and stat", () => {
 
     // File referenced but doesn't exist
     expect(() => {
-      (watcher as unknown as { onSignalFile: (f: string) => void }).onSignalFile("99.signal");
+      (watcher as unknown as { onFile: (f: string) => void }).onFile("99.signal");
     }).not.toThrow();
 
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
-    expect(signals.has(99)).toBe(false);
+    expect(signals.has("99:complete")).toBe(false);
 
     watcher.dispose();
     ctx.dispose();

@@ -6,16 +6,33 @@ import type { TerminalManager } from "./terminalManager";
 const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
 const POLL_INTERVAL_MS = 10 * 1000; // 10 seconds
 
+const SIGNAL_TYPES = [".signal", ".permission", ".error"] as const;
+type SignalType = "complete" | "permission" | "error";
+
+function fileExtToType(ext: string): SignalType | null {
+  if (ext === ".signal") return "complete";
+  if (ext === ".permission") return "permission";
+  if (ext === ".error") return "error";
+  return null;
+}
+
+function typeToExt(type: SignalType): string {
+  if (type === "complete") return ".signal";
+  if (type === "permission") return ".permission";
+  return ".error";
+}
+
 interface Signal {
   index: number;
   timestamp: number;
+  type: SignalType;
 }
 
 export class SignalWatcher {
   private readonly signalDir: string;
   private readonly log: vscode.OutputChannel;
   private readonly terminalManager: TerminalManager;
-  private readonly signals = new Map<number, Signal>();
+  private readonly signals = new Map<string, Signal>(); // key: "index:type"
   private readonly statusBarItem: vscode.StatusBarItem;
   private watcher: fs.FSWatcher | undefined;
   private pollTimer: NodeJS.Timeout | undefined;
@@ -38,82 +55,81 @@ export class SignalWatcher {
     this.updateStatusBar();
   }
 
-  start(context: vscode.ExtensionContext): void {
-    // Ensure signals directory exists
-    fs.mkdirSync(this.signalDir, { recursive: true });
+  private signalKey(index: number, type: SignalType): string {
+    return `${index}:${type}`;
+  }
 
-    // Pick up any existing signals (but defer goto until restore completes)
+  start(context: vscode.ExtensionContext): void {
+    fs.mkdirSync(this.signalDir, { recursive: true });
     this.scanSignals();
 
-    // Watch for new signals and goto requests
     try {
       this.watcher = fs.watch(this.signalDir, (_, filename) => {
         if (filename === "goto") {
           this.onGotoFile();
-        } else if (filename && filename.endsWith(".signal")) {
-          this.onSignalFile(filename);
+        } else if (filename) {
+          this.onFile(filename);
         }
       });
     } catch {
       this.log.appendLine("Failed to watch signals directory");
     }
 
-    // Polling fallback — fs.watch on macOS can miss events
     this.pollTimer = setInterval(() => this.scanSignals(), POLL_INTERVAL_MS);
 
-    // Register click command
     context.subscriptions.push(
       vscode.commands.registerCommand("dtach-persist.cycleSignal", () => {
         this.cycleToNext();
       }),
     );
 
-    // Clear signal when user switches to that terminal
     context.subscriptions.push(
       vscode.window.onDidChangeActiveTerminal((terminal) => {
         if (!terminal) return;
-        this.clearActiveTerminalSignal(terminal);
+        this.clearActiveTerminalSignals(terminal);
       }),
     );
 
-    // Clear signal when window regains focus (user switched back from another window)
     context.subscriptions.push(
       vscode.window.onDidChangeWindowState((state) => {
         if (!state.focused) return;
         const terminal = vscode.window.activeTerminal;
-        if (terminal) this.clearActiveTerminalSignal(terminal);
+        if (terminal) this.clearActiveTerminalSignals(terminal);
       }),
     );
   }
 
-  private clearActiveTerminalSignal(terminal: vscode.Terminal): void {
+  private clearActiveTerminalSignals(terminal: vscode.Terminal): void {
     const index = this.terminalManager.getIndex(terminal);
-    if (index !== undefined && this.signals.has(index)) {
-      this.clearSignal(index);
-      this.updateStatusBar();
+    if (index === undefined) return;
+    let changed = false;
+    for (const type of ["complete", "permission", "error"] as SignalType[]) {
+      const key = this.signalKey(index, type);
+      if (this.signals.has(key)) {
+        this.clearSignal(index, type);
+        changed = true;
+      }
     }
+    if (changed) this.updateStatusBar();
   }
 
-  /** Called by extension.ts after restoreTerminals completes */
   markRestoreComplete(): void {
     this.restoreComplete = true;
-    // Process any goto file that was waiting for restore
     const gotoPath = path.join(this.signalDir, "goto");
     if (fs.existsSync(gotoPath)) {
       this.onGotoFile();
     }
   }
 
-  /** Called by terminalManager when a terminal is closed */
   onTerminalClosed(index: number): void {
-    this.clearSignal(index);
+    for (const type of ["complete", "permission", "error"] as SignalType[]) {
+      this.clearSignal(index, type);
+    }
     this.updateStatusBar();
   }
 
   private onGotoFile(): void {
-    // Don't process goto until terminals are restored (#4)
     if (!this.restoreComplete) return;
-
     const gotoPath = path.join(this.signalDir, "goto");
     try {
       const content = fs.readFileSync(gotoPath, "utf8").trim();
@@ -121,40 +137,46 @@ export class SignalWatcher {
       if (!isNaN(index)) {
         this.log.appendLine(`Goto request for terminal ${index}`);
         this.terminalManager.showTerminal(index);
-        this.clearSignal(index);
+        for (const type of ["complete", "permission", "error"] as SignalType[]) {
+          this.clearSignal(index, type);
+        }
       }
       fs.unlinkSync(gotoPath);
     } catch {
       // file may have been deleted
     }
-    this.updateStatusBar(); // Fix #1: was missing
+    this.updateStatusBar();
   }
 
   private scanSignals(): void {
     try {
       const files = fs.readdirSync(this.signalDir);
 
-      // Process goto file if restore is complete
       if (this.restoreComplete && files.includes("goto")) {
         this.onGotoFile();
       }
 
-      // Reconcile Map with disk — prune entries not found on disk (#2)
-      const indicesOnDisk = new Set<number>();
+      const keysOnDisk = new Set<string>();
 
       for (const file of files) {
-        if (file.endsWith(".signal")) {
-          const index = parseInt(path.basename(file, ".signal"), 10);
-          if (!isNaN(index)) indicesOnDisk.add(index);
-          this.onSignalFile(file);
+        for (const ext of SIGNAL_TYPES) {
+          if (file.endsWith(ext)) {
+            const index = parseInt(path.basename(file, ext), 10);
+            const type = fileExtToType(ext);
+            if (!isNaN(index) && type) {
+              keysOnDisk.add(this.signalKey(index, type));
+              this.onFile(file);
+            }
+            break;
+          }
         }
       }
 
-      // Remove phantom entries whose files no longer exist
-      for (const index of this.signals.keys()) {
-        if (!indicesOnDisk.has(index)) {
-          this.signals.delete(index);
-          this.log.appendLine(`Pruned phantom signal for terminal ${index}`);
+      // Prune phantom entries
+      for (const key of this.signals.keys()) {
+        if (!keysOnDisk.has(key)) {
+          this.signals.delete(key);
+          this.log.appendLine(`Pruned phantom signal: ${key}`);
         }
       }
 
@@ -164,8 +186,19 @@ export class SignalWatcher {
     }
   }
 
-  private onSignalFile(filename: string): void {
-    const index = parseInt(path.basename(filename, ".signal"), 10);
+  private onFile(filename: string): void {
+    let signalType: SignalType | null = null;
+    let ext = "";
+    for (const e of SIGNAL_TYPES) {
+      if (filename.endsWith(e)) {
+        signalType = fileExtToType(e);
+        ext = e;
+        break;
+      }
+    }
+    if (!signalType) return;
+
+    const index = parseInt(path.basename(filename, ext), 10);
     if (isNaN(index)) return;
 
     const filePath = path.join(this.signalDir, filename);
@@ -173,57 +206,61 @@ export class SignalWatcher {
     try {
       timestamp = fs.statSync(filePath).mtimeMs;
     } catch {
-      return; // file may have been deleted
-    }
-
-    // Ignore stale signals
-    if (Date.now() - timestamp > STALE_THRESHOLD_MS) {
-      this.deleteSignalFile(index);
       return;
     }
 
-    // Ignore if this terminal is active AND the window is focused
-    // (if the user switched to another window, don't suppress)
+    if (Date.now() - timestamp > STALE_THRESHOLD_MS) {
+      this.deleteFile(index, signalType);
+      return;
+    }
+
     if (vscode.window.state.focused) {
       const activeTerminal = vscode.window.activeTerminal;
       if (activeTerminal) {
         const activeIndex = this.terminalManager.getIndex(activeTerminal);
         if (activeIndex === index) {
-          this.deleteSignalFile(index);
+          this.deleteFile(index, signalType);
           return;
         }
       }
     }
 
-    this.signals.set(index, { index, timestamp });
-    this.log.appendLine(`Signal received for terminal ${index}`);
+    const key = this.signalKey(index, signalType);
+    this.signals.set(key, { index, timestamp, type: signalType });
+    this.log.appendLine(`Signal received: terminal ${index} (${signalType})`);
     this.updateStatusBar();
   }
 
-  private clearSignal(index: number): void {
-    this.signals.delete(index);
-    this.deleteSignalFile(index);
+  private clearSignal(index: number, type: SignalType): void {
+    this.signals.delete(this.signalKey(index, type));
+    this.deleteFile(index, type);
   }
 
   deleteSignalFile(index: number): void {
+    for (const type of ["complete", "permission", "error"] as SignalType[]) {
+      this.deleteFile(index, type);
+    }
+  }
+
+  private deleteFile(index: number, type: SignalType): void {
     try {
-      fs.unlinkSync(path.join(this.signalDir, `${index}.signal`));
+      fs.unlinkSync(path.join(this.signalDir, `${index}${typeToExt(type)}`));
     } catch {
       // already gone
     }
   }
 
   private updateStatusBar(): void {
-    // Clean stale signals — batch delete to avoid re-entrancy
     const now = Date.now();
-    const stale: number[] = [];
-    for (const [index, signal] of this.signals) {
+    const stale: string[] = [];
+    for (const [key, signal] of this.signals) {
       if (now - signal.timestamp > STALE_THRESHOLD_MS) {
-        stale.push(index);
+        stale.push(key);
       }
     }
-    for (const index of stale) {
-      this.clearSignal(index);
+    for (const key of stale) {
+      const signal = this.signals.get(key)!;
+      this.clearSignal(signal.index, signal.type);
     }
 
     const count = this.signals.size;
@@ -232,9 +269,15 @@ export class SignalWatcher {
       return;
     }
 
-    this.statusBarItem.text = `$(bell) ${count} awaiting`;
+    // Check for urgent signals (permission/error)
+    const hasUrgent = [...this.signals.values()].some(
+      (s) => s.type === "permission" || s.type === "error",
+    );
+
+    const icon = hasUrgent ? "$(alert)" : "$(bell)";
+    this.statusBarItem.text = `${icon} ${count} awaiting`;
     this.statusBarItem.backgroundColor = new vscode.ThemeColor(
-      "statusBarItem.warningBackground",
+      hasUrgent ? "statusBarItem.errorBackground" : "statusBarItem.warningBackground",
     );
     this.statusBarItem.tooltip = this.buildTooltip();
     this.statusBarItem.show();
@@ -243,10 +286,19 @@ export class SignalWatcher {
   private buildTooltip(): string {
     const lines = ["Terminals awaiting attention:"];
     const now = Date.now();
-    for (const [index, signal] of this.signals) {
+    const sorted = [...this.signals.values()].sort((a, b) => {
+      // Urgent first, then by timestamp
+      const urgencyA = a.type === "permission" ? 0 : a.type === "error" ? 1 : 2;
+      const urgencyB = b.type === "permission" ? 0 : b.type === "error" ? 1 : 2;
+      if (urgencyA !== urgencyB) return urgencyA - urgencyB;
+      return b.timestamp - a.timestamp;
+    });
+    for (const signal of sorted) {
       const ago = Math.round((now - signal.timestamp) / 60000);
-      const name = this.terminalManager.getSavedName(index) || `Terminal ${index + 1}`;
-      lines.push(`  ● ${name} (${ago}m ago)`);
+      const name = this.terminalManager.getSavedName(signal.index) || `Terminal ${signal.index + 1}`;
+      const icon = signal.type === "permission" ? "🔴" : signal.type === "error" ? "❌" : "●";
+      const label = signal.type === "permission" ? "needs approval" : signal.type === "error" ? "error" : "done";
+      lines.push(`  ${icon} ${name} — ${label} (${ago}m ago)`);
     }
     return lines.join("\n");
   }
@@ -254,32 +306,37 @@ export class SignalWatcher {
   private async cycleToNext(): Promise<void> {
     if (this.signals.size === 0) return;
 
-    // Single signal — jump directly
     if (this.signals.size === 1) {
-      const index = [...this.signals.keys()][0];
-      this.terminalManager.showTerminal(index);
-      this.clearSignal(index);
+      const signal = [...this.signals.values()][0];
+      this.terminalManager.showTerminal(signal.index);
+      this.clearSignal(signal.index, signal.type);
       this.updateStatusBar();
       return;
     }
 
-    // Multiple signals — show quick pick
     const now = Date.now();
-    const items = [...this.signals.entries()]
-      .sort((a, b) => b[1].timestamp - a[1].timestamp)
-      .map(([index, signal]) => {
+    const items = [...this.signals.values()]
+      .sort((a, b) => {
+        const urgencyA = a.type === "permission" ? 0 : a.type === "error" ? 1 : 2;
+        const urgencyB = b.type === "permission" ? 0 : b.type === "error" ? 1 : 2;
+        if (urgencyA !== urgencyB) return urgencyA - urgencyB;
+        return b.timestamp - a.timestamp;
+      })
+      .map((signal) => {
         const ago = Math.round((now - signal.timestamp) / 60000);
-        const name = this.terminalManager.getSavedName(index) || `Terminal ${index + 1}`;
-        return { label: `$(bell) ${name}`, description: `${ago}m ago`, index };
+        const name = this.terminalManager.getSavedName(signal.index) || `Terminal ${signal.index + 1}`;
+        const icon = signal.type === "permission" ? "$(alert)" : signal.type === "error" ? "$(error)" : "$(bell)";
+        const label = signal.type === "permission" ? "needs approval" : signal.type === "error" ? "error" : "done";
+        return { label: `${icon} ${name}`, description: `${label} — ${ago}m ago`, signal };
       });
 
     const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: "Select terminal to switch to",
+      placeHolder: "Select terminal to switch to (urgent first)",
     });
 
     if (picked) {
-      this.terminalManager.showTerminal(picked.index);
-      this.clearSignal(picked.index);
+      this.terminalManager.showTerminal(picked.signal.index);
+      this.clearSignal(picked.signal.index, picked.signal.type);
       this.updateStatusBar();
     }
   }
