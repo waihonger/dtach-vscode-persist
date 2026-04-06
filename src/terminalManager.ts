@@ -22,6 +22,7 @@ export class TerminalManager {
   private readonly disposables: vscode.Disposable[] = [];
   private disposing = false;
   private savedNames: Record<string, string> = {};
+  private onTerminalClosedCallback: ((index: number) => void) | undefined;
 
   constructor(socketDir: string, startDir: string, log: vscode.OutputChannel) {
     this.socketDir = socketDir;
@@ -131,6 +132,9 @@ export class TerminalManager {
       return;
     }
 
+    // Notify signal watcher to clear signal for this terminal (#3, #6)
+    this.onTerminalClosedCallback?.(index);
+
     this.log.appendLine(
       `Terminal closed — scheduling kill for socket ${index}`,
     );
@@ -206,6 +210,10 @@ export class TerminalManager {
   showTerminal(index: number): void {
     const terminal = this.indexToTerminal.get(index);
     if (terminal) terminal.show();
+  }
+
+  setOnTerminalClosed(callback: (index: number) => void): void {
+    this.onTerminalClosedCallback = callback;
   }
 
   getSavedName(index: number): string | undefined {

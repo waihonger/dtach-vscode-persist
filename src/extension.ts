@@ -58,6 +58,9 @@ export async function activate(
   signalWatcher.start(context);
   context.subscriptions.push({ dispose: () => signalWatcher.dispose() });
 
+  // Connect terminal close → signal cleanup (#3, #6)
+  terminalManager.setOnTerminalClosed((index) => signalWatcher.onTerminalClosed(index));
+
   context.subscriptions.push(
     vscode.window.registerTerminalProfileProvider("dtach-persist.terminal", {
       provideTerminalProfile: () => {
@@ -131,8 +134,12 @@ export async function activate(
       terminalManager!.showFirst();
       pendingRestoreSockets = [];
       rogueWatcher.dispose();
+      signalWatcher.markRestoreComplete(); // Now safe to process goto files (#4)
       log.appendLine("Restore complete, provider queue cleared");
     }, 500);
+  } else {
+    // No sockets to restore — goto is safe immediately
+    signalWatcher.markRestoreComplete();
   }
 
   log.appendLine("dtach-persist activated");

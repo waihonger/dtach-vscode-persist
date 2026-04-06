@@ -19,6 +19,7 @@ export class SignalWatcher {
   private readonly statusBarItem: vscode.StatusBarItem;
   private watcher: fs.FSWatcher | undefined;
   private pollTimer: NodeJS.Timeout | undefined;
+  private restoreComplete = false;
 
   constructor(
     signalDir: string,
@@ -41,7 +42,7 @@ export class SignalWatcher {
     // Ensure signals directory exists
     fs.mkdirSync(this.signalDir, { recursive: true });
 
-    // Pick up any existing signals and stale goto files (#2)
+    // Pick up any existing signals (but defer goto until restore completes)
     this.scanSignals();
 
     // Watch for new signals and goto requests
@@ -57,7 +58,7 @@ export class SignalWatcher {
       this.log.appendLine("Failed to watch signals directory");
     }
 
-    // Polling fallback — fs.watch on macOS can miss events (#5)
+    // Polling fallback — fs.watch on macOS can miss events
     this.pollTimer = setInterval(() => this.scanSignals(), POLL_INTERVAL_MS);
 
     // Register click command
@@ -74,12 +75,32 @@ export class SignalWatcher {
         const index = this.terminalManager.getIndex(terminal);
         if (index !== undefined && this.signals.has(index)) {
           this.clearSignal(index);
+          this.updateStatusBar(); // Fix #1: was missing
         }
       }),
     );
   }
 
+  /** Called by extension.ts after restoreTerminals completes */
+  markRestoreComplete(): void {
+    this.restoreComplete = true;
+    // Process any goto file that was waiting for restore
+    const gotoPath = path.join(this.signalDir, "goto");
+    if (fs.existsSync(gotoPath)) {
+      this.onGotoFile();
+    }
+  }
+
+  /** Called by terminalManager when a terminal is closed */
+  onTerminalClosed(index: number): void {
+    this.clearSignal(index);
+    this.updateStatusBar();
+  }
+
   private onGotoFile(): void {
+    // Don't process goto until terminals are restored (#4)
+    if (!this.restoreComplete) return;
+
     const gotoPath = path.join(this.signalDir, "goto");
     try {
       const content = fs.readFileSync(gotoPath, "utf8").trim();
@@ -93,20 +114,38 @@ export class SignalWatcher {
     } catch {
       // file may have been deleted
     }
+    this.updateStatusBar(); // Fix #1: was missing
   }
 
   private scanSignals(): void {
     try {
       const files = fs.readdirSync(this.signalDir);
-      // Process any stale goto file from a previous crash (#2)
-      if (files.includes("goto")) {
+
+      // Process goto file if restore is complete
+      if (this.restoreComplete && files.includes("goto")) {
         this.onGotoFile();
       }
+
+      // Reconcile Map with disk — prune entries not found on disk (#2)
+      const indicesOnDisk = new Set<number>();
+
       for (const file of files) {
         if (file.endsWith(".signal")) {
+          const index = parseInt(path.basename(file, ".signal"), 10);
+          if (!isNaN(index)) indicesOnDisk.add(index);
           this.onSignalFile(file);
         }
       }
+
+      // Remove phantom entries whose files no longer exist
+      for (const index of this.signals.keys()) {
+        if (!indicesOnDisk.has(index)) {
+          this.signals.delete(index);
+          this.log.appendLine(`Pruned phantom signal for terminal ${index}`);
+        }
+      }
+
+      this.updateStatusBar();
     } catch {
       // dir may not exist yet
     }
@@ -148,10 +187,9 @@ export class SignalWatcher {
   private clearSignal(index: number): void {
     this.signals.delete(index);
     this.deleteSignalFile(index);
-    // No updateStatusBar() here — caller is responsible (#4)
   }
 
-  private deleteSignalFile(index: number): void {
+  deleteSignalFile(index: number): void {
     try {
       fs.unlinkSync(path.join(this.signalDir, `${index}.signal`));
     } catch {
@@ -160,7 +198,7 @@ export class SignalWatcher {
   }
 
   private updateStatusBar(): void {
-    // Clean stale signals — batch delete to avoid re-entrancy (#4)
+    // Clean stale signals — batch delete to avoid re-entrancy
     const now = Date.now();
     const stale: number[] = [];
     for (const [index, signal] of this.signals) {
