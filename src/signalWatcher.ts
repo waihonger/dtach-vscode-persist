@@ -169,13 +169,16 @@ export class SignalWatcher {
       return;
     }
 
-    // Ignore if this terminal is currently active
-    const activeTerminal = vscode.window.activeTerminal;
-    if (activeTerminal) {
-      const activeIndex = this.terminalManager.getIndex(activeTerminal);
-      if (activeIndex === index) {
-        this.deleteSignalFile(index);
-        return;
+    // Ignore if this terminal is active AND the window is focused
+    // (if the user switched to another window, don't suppress)
+    if (vscode.window.state.focused) {
+      const activeTerminal = vscode.window.activeTerminal;
+      if (activeTerminal) {
+        const activeIndex = this.terminalManager.getIndex(activeTerminal);
+        if (activeIndex === index) {
+          this.deleteSignalFile(index);
+          return;
+        }
       }
     }
 
