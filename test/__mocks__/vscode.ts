@@ -18,6 +18,7 @@ class EventEmitter {
 export const _onDidCloseTerminal = new EventEmitter();
 export const _onDidOpenTerminal = new EventEmitter();
 export const _onDidChangeActiveTerminal = new EventEmitter();
+export const _onDidChangeWindowState = new EventEmitter();
 export let _activeTerminal: unknown = undefined;
 export function _setActiveTerminal(t: unknown) { _activeTerminal = t; }
 
@@ -52,6 +53,7 @@ export const window = {
   onDidCloseTerminal: _onDidCloseTerminal.event,
   onDidOpenTerminal: _onDidOpenTerminal.event,
   onDidChangeActiveTerminal: _onDidChangeActiveTerminal.event,
+  onDidChangeWindowState: _onDidChangeWindowState.event,
   registerTerminalProfileProvider: () => ({ dispose: () => {} }),
   createStatusBarItem: () => ({
     text: "",

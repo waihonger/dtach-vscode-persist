@@ -72,13 +72,26 @@ export class SignalWatcher {
     context.subscriptions.push(
       vscode.window.onDidChangeActiveTerminal((terminal) => {
         if (!terminal) return;
-        const index = this.terminalManager.getIndex(terminal);
-        if (index !== undefined && this.signals.has(index)) {
-          this.clearSignal(index);
-          this.updateStatusBar(); // Fix #1: was missing
-        }
+        this.clearActiveTerminalSignal(terminal);
       }),
     );
+
+    // Clear signal when window regains focus (user switched back from another window)
+    context.subscriptions.push(
+      vscode.window.onDidChangeWindowState((state) => {
+        if (!state.focused) return;
+        const terminal = vscode.window.activeTerminal;
+        if (terminal) this.clearActiveTerminalSignal(terminal);
+      }),
+    );
+  }
+
+  private clearActiveTerminalSignal(terminal: vscode.Terminal): void {
+    const index = this.terminalManager.getIndex(terminal);
+    if (index !== undefined && this.signals.has(index)) {
+      this.clearSignal(index);
+      this.updateStatusBar();
+    }
   }
 
   /** Called by extension.ts after restoreTerminals completes */
