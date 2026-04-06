@@ -111,6 +111,10 @@ export function removeSocket(sockPath: string): void {
 }
 
 export function cleanupDeadSockets(dir: string): void {
+  // Note: dtach's -z flag auto-removes sockets on normal process exit.
+  // Orphaned sockets only occur on hard crashes and are cleaned by
+  // $TMPDIR cleanup on reboot. This function removes socket files
+  // that no longer exist on disk (e.g. partially deleted).
   try {
     const files = fs.readdirSync(dir);
     for (const f of files) {

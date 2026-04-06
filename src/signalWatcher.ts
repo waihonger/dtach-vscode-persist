@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import type { TerminalManager } from "./terminalManager";
 
 const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
+const POLL_INTERVAL_MS = 10 * 1000; // 10 seconds
 
 interface Signal {
   index: number;
@@ -17,6 +18,7 @@ export class SignalWatcher {
   private readonly signals = new Map<number, Signal>();
   private readonly statusBarItem: vscode.StatusBarItem;
   private watcher: fs.FSWatcher | undefined;
+  private pollTimer: NodeJS.Timeout | undefined;
 
   constructor(
     signalDir: string,
@@ -39,7 +41,7 @@ export class SignalWatcher {
     // Ensure signals directory exists
     fs.mkdirSync(this.signalDir, { recursive: true });
 
-    // Pick up any existing signals
+    // Pick up any existing signals and stale goto files (#2)
     this.scanSignals();
 
     // Watch for new signals and goto requests
@@ -54,6 +56,9 @@ export class SignalWatcher {
     } catch {
       this.log.appendLine("Failed to watch signals directory");
     }
+
+    // Polling fallback — fs.watch on macOS can miss events (#5)
+    this.pollTimer = setInterval(() => this.scanSignals(), POLL_INTERVAL_MS);
 
     // Register click command
     context.subscriptions.push(
@@ -93,6 +98,10 @@ export class SignalWatcher {
   private scanSignals(): void {
     try {
       const files = fs.readdirSync(this.signalDir);
+      // Process any stale goto file from a previous crash (#2)
+      if (files.includes("goto")) {
+        this.onGotoFile();
+      }
       for (const file of files) {
         if (file.endsWith(".signal")) {
           this.onSignalFile(file);
@@ -139,7 +148,7 @@ export class SignalWatcher {
   private clearSignal(index: number): void {
     this.signals.delete(index);
     this.deleteSignalFile(index);
-    this.updateStatusBar();
+    // No updateStatusBar() here — caller is responsible (#4)
   }
 
   private deleteSignalFile(index: number): void {
@@ -151,12 +160,16 @@ export class SignalWatcher {
   }
 
   private updateStatusBar(): void {
-    // Clean stale signals
+    // Clean stale signals — batch delete to avoid re-entrancy (#4)
     const now = Date.now();
+    const stale: number[] = [];
     for (const [index, signal] of this.signals) {
       if (now - signal.timestamp > STALE_THRESHOLD_MS) {
-        this.clearSignal(index);
+        stale.push(index);
       }
+    }
+    for (const index of stale) {
+      this.clearSignal(index);
     }
 
     const count = this.signals.size;
@@ -192,6 +205,7 @@ export class SignalWatcher {
       const index = [...this.signals.keys()][0];
       this.terminalManager.showTerminal(index);
       this.clearSignal(index);
+      this.updateStatusBar();
       return;
     }
 
@@ -212,11 +226,13 @@ export class SignalWatcher {
     if (picked) {
       this.terminalManager.showTerminal(picked.index);
       this.clearSignal(picked.index);
+      this.updateStatusBar();
     }
   }
 
   dispose(): void {
     this.watcher?.close();
+    if (this.pollTimer) clearInterval(this.pollTimer);
     this.statusBarItem.dispose();
   }
 }

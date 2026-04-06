@@ -23,7 +23,9 @@ export function resolveWorkspaceId(): string {
       .update(fsPath)
       .digest("hex")
       .slice(0, 6);
-    return sanitizeName(`${folderName}-${hash}`);
+    // Truncate name portion only, append hash unconditionally (#3)
+    const sanitized = sanitizeName(folderName).slice(0, 25);
+    return `${sanitized}-${hash}`;
   }
   return "vscode";
 }

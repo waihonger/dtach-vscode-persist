@@ -38,6 +38,14 @@ export async function activate(
   ensureSocketDir(socketDir);
   cleanupDeadSockets(socketDir);
 
+  // Write workspace metadata so cc-overlord knows the actual path
+  const fs = require("fs") as typeof import("fs");
+  const path = require("path") as typeof import("path");
+  fs.writeFileSync(
+    path.join(socketDir, "workspace.json"),
+    JSON.stringify({ path: startDir }),
+  );
+
   terminalManager = new TerminalManager(socketDir, startDir, log);
 
   // Register synchronous providers, commands, and event handlers before any

@@ -1,0 +1,30 @@
+#!/bin/bash
+# Detects the dtach socket index for the current terminal and exports env vars.
+# Usage: source <(dtach-persist-env)
+
+TMPDIR="${TMPDIR:-/tmp}"
+BASE="$TMPDIR/dtach-persist"
+
+# Find which dtach socket we're attached to by checking parent processes
+SOCK_PATH=""
+PID=$$
+while [ "$PID" -gt 1 ]; do
+    CMD=$(ps -o args= -p "$PID" 2>/dev/null)
+    if echo "$CMD" | grep -q "dtach.*\.sock"; then
+        SOCK_PATH=$(echo "$CMD" | grep -oE '[^ ]+\.sock' | head -1)
+        break
+    fi
+    PID=$(ps -o ppid= -p "$PID" 2>/dev/null | tr -d ' ')
+done
+
+if [ -z "$SOCK_PATH" ]; then
+    echo "# Not running inside a dtach session" >&2
+    exit 1
+fi
+
+# Extract index from socket path (e.g., /path/to/3.sock → 3)
+INDEX=$(basename "$SOCK_PATH" .sock)
+SIGNAL_DIR=$(dirname "$SOCK_PATH")/signals
+
+echo "export DTACH_SOCKET_INDEX=$INDEX"
+echo "export DTACH_SIGNAL_DIR=$SIGNAL_DIR"
