@@ -45,3 +45,7 @@ export function resolveStartDirectory(): string {
 export function socketPath(dir: string, index: number): string {
   return path.join(dir, `${index}.sock`);
 }
+
+export function signalDir(socketDir: string): string {
+  return path.join(socketDir, "signals");
+}

@@ -83,6 +83,8 @@ export function createSocket(
   dtachBinary: string,
   sockPath: string,
   startDir: string,
+  index: number,
+  signalDir: string,
 ): void {
   const shell = process.env.SHELL || "/bin/zsh";
   const env = {
@@ -90,6 +92,8 @@ export function createSocket(
     TERM: "xterm-256color",
     COLORTERM: "truecolor",
     TERM_PROGRAM: "vscode",
+    DTACH_SOCKET_INDEX: String(index),
+    DTACH_SIGNAL_DIR: signalDir,
   };
   execFileSync(dtachBinary, ["-n", sockPath, "-E", "-z", shell], {
     cwd: startDir,

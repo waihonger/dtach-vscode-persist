@@ -7,7 +7,8 @@ import {
   findNextIndex,
   createSocket,
 } from "./dtach";
-import { resolveSocketDir, resolveStartDirectory, socketPath } from "./config";
+import { resolveSocketDir, resolveStartDirectory, socketPath, signalDir } from "./config";
+import { SignalWatcher } from "./signalWatcher";
 import { TerminalManager } from "./terminalManager";
 
 let terminalManager: TerminalManager | undefined;
@@ -43,6 +44,12 @@ export async function activate(
   // async work so VS Code can resolve the profile immediately on startup
   terminalManager.registerEventHandlers(context);
 
+  // Signal watcher for Claude Code task completion notifications
+  const sigDir = signalDir(socketDir);
+  const signalWatcher = new SignalWatcher(sigDir, terminalManager, log);
+  signalWatcher.start(context);
+  context.subscriptions.push({ dispose: () => signalWatcher.dispose() });
+
   context.subscriptions.push(
     vscode.window.registerTerminalProfileProvider("dtach-persist.terminal", {
       provideTerminalProfile: () => {
@@ -60,7 +67,9 @@ export async function activate(
         ensureSocketDir(socketDir);
         const index = findNextIndex(socketDir);
         const sockPath = socketPath(socketDir, index);
-        createSocket(binary, sockPath, startDir);
+        const sigDir = signalDir(socketDir);
+        ensureSocketDir(sigDir);
+        createSocket(binary, sockPath, startDir, index, sigDir);
         log.appendLine(`Profile provider: created socket ${index}`);
 
         return new vscode.TerminalProfile({

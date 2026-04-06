@@ -1,7 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { KILL_SOCKET_DELAY_MS, socketPath } from "./config";
+import { KILL_SOCKET_DELAY_MS, socketPath, signalDir } from "./config";
 import {
   findDtachBinary,
   removeSocket,
@@ -100,9 +100,11 @@ export class TerminalManager {
     ensureSocketDir(this.socketDir);
     const index = findNextIndex(this.socketDir);
     const sockPath = socketPath(this.socketDir, index);
+    const sigDir = signalDir(this.socketDir);
+    ensureSocketDir(sigDir);
     const binary = findDtachBinary()!;
 
-    createSocket(binary, sockPath, this.startDir);
+    createSocket(binary, sockPath, this.startDir, index, sigDir);
     this.log.appendLine(`Created socket ${index} at ${sockPath}`);
 
     return this.createTerminalForSocket({ index, socketPath: sockPath }, true);
@@ -195,6 +197,15 @@ export class TerminalManager {
   showFirst(): void {
     const first = this.indexToTerminal.values().next().value;
     if (first) first.show();
+  }
+
+  getIndex(terminal: vscode.Terminal): number | undefined {
+    return this.terminalToIndex.get(terminal);
+  }
+
+  showTerminal(index: number): void {
+    const terminal = this.indexToTerminal.get(index);
+    if (terminal) terminal.show();
   }
 
   getSavedName(index: number): string | undefined {
