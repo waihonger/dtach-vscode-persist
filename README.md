@@ -99,17 +99,18 @@ Know when Claude Code finishes a task without checking each terminal tab.
 ### In-window (built-in)
 
 The extension watches for signal files and shows a status bar indicator:
-- **"● N awaiting"** appears when terminals finish in the background
-- Click to see a list of awaiting terminals and jump to one
-- Signals auto-clear when you switch to a terminal or after 15 minutes
+- **"● N awaiting"** (yellow) — Claude finished a task
+- **"⚠ N awaiting"** (red) — Claude needs permission approval or hit an error
+- Click to see a list of awaiting terminals and jump to one (urgent signals sorted first)
+- Signals auto-clear when you switch to the terminal, focus the window, or after 15 minutes
 
 ### Cross-window (CC Overlord)
 
-For notifications across all VS Code windows, install [CC Overlord](https://github.com/waihonger/cc-overlord) — a macOS menu bar companion app.
+For notifications across all VS Code windows, install [CC Overlord](https://github.com/waihonger/cc-overlord) — a macOS menu bar companion app with blinking bell icon and click-to-focus.
 
 ### Setup
 
-Add the Claude Code Stop hook to `~/.claude/settings.json`:
+Add these Claude Code hooks to `~/.claude/settings.json`:
 
 ```json
 {
@@ -117,13 +118,19 @@ Add the Claude Code Stop hook to `~/.claude/settings.json`:
     "Stop": [
       {
         "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "test -n \"$DTACH_SIGNAL_DIR\" && test -n \"$DTACH_SOCKET_INDEX\" && touch \"$DTACH_SIGNAL_DIR/$DTACH_SOCKET_INDEX.signal\" || true",
-            "timeout": 1000
-          }
-        ]
+        "hooks": [{ "type": "command", "command": "test -n \"$DTACH_SIGNAL_DIR\" && test -n \"$DTACH_SOCKET_INDEX\" && touch \"$DTACH_SIGNAL_DIR/$DTACH_SOCKET_INDEX.signal\" || true", "timeout": 1000 }]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "test -n \"$DTACH_SIGNAL_DIR\" && test -n \"$DTACH_SOCKET_INDEX\" && touch \"$DTACH_SIGNAL_DIR/$DTACH_SOCKET_INDEX.permission\" || true", "timeout": 1000 }]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "test -n \"$DTACH_SIGNAL_DIR\" && test -n \"$DTACH_SOCKET_INDEX\" && touch \"$DTACH_SIGNAL_DIR/$DTACH_SOCKET_INDEX.error\" || true", "timeout": 1000 }]
       }
     ]
   }

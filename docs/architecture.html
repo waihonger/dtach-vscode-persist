@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal Notification System — Architecture</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,monospace;background:#0d1117;color:#c9d1d9;min-height:100vh;padding:24px}
+  h1{text-align:center;font-size:1.4rem;color:#58a6ff;margin-bottom:6px}
+  .subtitle{text-align:center;color:#8b949e;font-size:.85rem;margin-bottom:28px}
+  .diagram{display:grid;grid-template-columns:1fr 280px 1fr;grid-template-rows:auto auto auto;gap:16px;max-width:1100px;margin:0 auto}
+  @media(max-width:900px){.diagram{grid-template-columns:1fr;grid-template-rows:auto}}
+  .box{border-radius:10px;padding:18px;position:relative;border:1px solid #30363d;background:#161b22}
+  .box h2{font-size:1rem;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .box ul{list-style:none;font-size:.78rem;line-height:1.7;color:#8b949e}
+  .box ul li::before{content:'→ ';color:#484f58}
+
+  /* Producer */
+  .producer{grid-column:1/-1;background:linear-gradient(135deg,#161b22 60%,#0f1a0f);border-color:#238636}
+  .producer h2{color:#3fb950}
+  .producer .badge{background:#238636;color:#fff;font-size:.65rem;padding:2px 8px;border-radius:99px}
+
+  /* Consumers */
+  .consumer-ext{grid-column:1;border-color:#1f6feb}
+  .consumer-ext h2{color:#58a6ff}
+  .consumer-bar{grid-column:3;border-color:#a371f7}
+  .consumer-bar h2{color:#d2a8ff}
+
+  /* Filesystem */
+  .filesystem{grid-column:2;grid-row:2/4;border-color:#d29922;background:#161b22;font-family:'SF Mono',Consolas,monospace;font-size:.72rem;line-height:1.8}
+  .filesystem h2{color:#d29922}
+  .filesystem .tree{color:#7ee787;padding:6px 0}
+  .filesystem .tree .dim{color:#484f58}
+  .filesystem .tree .sig{color:#3fb950;animation:pulse 2s infinite}
+  .filesystem .tree .goto{color:#f0883e}
+
+  /* Goto protocol */
+  .goto-box{grid-column:1/-1;border-color:#f0883e;background:linear-gradient(135deg,#161b22 60%,#1a150f)}
+  .goto-box h2{color:#f0883e}
+  .goto-steps{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+  .goto-step{background:#21262d;border-radius:8px;padding:10px 14px;font-size:.75rem;flex:1;min-width:180px;border-left:3px solid #f0883e;color:#c9d1d9}
+  .goto-step strong{color:#f0883e;display:block;margin-bottom:4px}
+
+  /* Signal animation */
+  .flow{position:relative;overflow:hidden}
+  .flow::after{content:'';position:absolute;width:8px;height:8px;border-radius:50%;animation:travel 3s ease-in-out infinite}
+  .producer.flow::after{background:#3fb950;top:100%;left:50%;animation-name:drop}
+  @keyframes drop{0%{transform:translateY(0);opacity:1}50%{transform:translateY(24px);opacity:.6}100%{transform:translateY(0);opacity:1}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  @keyframes glow{0%,100%{box-shadow:0 0 6px #3fb95033}50%{box-shadow:0 0 18px #3fb95066}}
+
+  /* Animated dots between boxes */
+  .signal-line{display:flex;align-items:center;justify-content:center;gap:4px;padding:6px 0}
+  .signal-line .dot{width:6px;height:6px;border-radius:50%;animation:blink 1.5s ease-in-out infinite}
+  .dot.g{background:#3fb950}.dot.o{background:#f0883e}.dot.r{background:#f85149}
+  .dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}
+  .dot:nth-child(4){animation-delay:.6s}.dot:nth-child(5){animation-delay:.8s}
+  @keyframes blink{0%,100%{opacity:.2;transform:scale(.8)}50%{opacity:1;transform:scale(1.3)}}
+
+  /* Legend */
+  .legend{display:flex;flex-wrap:wrap;gap:16px;justify-content:center;margin-top:28px;font-size:.78rem}
+  .legend-item{display:flex;align-items:center;gap:6px}
+  .legend-dot{width:10px;height:10px;border-radius:50%}
+  .legend-dot.create{background:#3fb950}
+  .legend-dot.consume{background:#f0883e}
+  .legend-dot.delete{background:#f85149}
+  .legend-dot.focus{background:#a371f7}
+  .legend-dot.watch{background:#58a6ff}
+
+  /* Lifecycle */
+  .lifecycle{max-width:1100px;margin:24px auto 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+  .lc-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:14px;font-size:.75rem}
+  .lc-card strong{display:block;margin-bottom:4px}
+  .lc-card.lc-create strong{color:#3fb950}
+  .lc-card.lc-consume strong{color:#f0883e}
+  .lc-card.lc-expire strong{color:#f85149}
+</style>
+</head>
+<body>
+
+<h1>Signal Notification System</h1>
+<p class="subtitle">dtach-persist extension + cc-overlord menu bar app &mdash; communicating via filesystem</p>
+
+<div class="diagram">
+  <!-- Producer -->
+  <div class="box producer flow">
+    <h2><span class="badge">PRODUCER</span> Claude Code (dtach terminal)</h2>
+    <ul>
+      <li>Stop hook fires when Claude finishes responding</li>
+      <li><code style="color:#3fb950">touch $DTACH_SIGNAL_DIR/$DTACH_SOCKET_INDEX.signal</code></li>
+      <li>Creates .signal file in <code>$TMPDIR/dtach-persist/&lt;workspace&gt;/signals/</code></li>
+    </ul>
+  </div>
+
+  <!-- Signal flow down -->
+  <div style="grid-column:1/-1">
+    <div class="signal-line"><div class="dot g"></div><div class="dot g"></div><div class="dot g"></div><div class="dot g"></div><div class="dot g"></div></div>
+  </div>
+
+  <!-- Consumer 1: Extension -->
+  <div class="box consumer-ext">
+    <h2>&#9881; VS Code Extension</h2>
+    <ul>
+      <li><code>fs.watch</code> + 10s polling fallback</li>
+      <li>Signal &rarr; in-memory <code>Map&lt;index, Signal&gt;</code></li>
+      <li>Status bar: <span style="color:#3fb950">&#9679;</span> <em>N awaiting</em></li>
+      <li>Terminal switch &rarr; clears signal + deletes file</li>
+      <li>Status bar click &rarr; quick pick &rarr; focus terminal</li>
+      <li>Terminal close &rarr; clears signal + notifies watcher</li>
+    </ul>
+    <div class="signal-line" style="margin-top:10px">
+      <span style="font-size:.7rem;color:#f0883e;margin-right:6px">consume</span>
+      <div class="dot o"></div><div class="dot o"></div><div class="dot o"></div>
+    </div>
+  </div>
+
+  <!-- Filesystem (center, spans 2 rows) -->
+  <div class="box filesystem" style="animation:glow 3s ease-in-out infinite">
+    <h2>&#128193; Shared Filesystem</h2>
+    <div class="tree">
+      <div><span class="dim">$TMPDIR/dtach-persist/</span></div>
+      <div>&nbsp;&nbsp;<span class="dim">&lt;project&gt;-&lt;hash&gt;/</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;0.sock</div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;1.sock</div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;names.json</div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;workspace.json</div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">signals/</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="sig">0.signal</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="sig">2.signal</span></div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="goto">goto</span></div>
+    </div>
+    <div style="margin-top:8px;color:#8b949e;font-size:.68rem">
+      Both apps read/write signals.<br>
+      ENOENT tolerance for dual ownership.
+    </div>
+  </div>
+
+  <!-- Consumer 2: cc-overlord -->
+  <div class="box consumer-bar">
+    <h2>&#9881; CC Overlord (Menu Bar)</h2>
+    <ul>
+      <li>Watches ALL <code>*/signals/</code> directories</li>
+      <li>DispatchSource watchers + 5s polling</li>
+      <li>Rebuilds signal list from disk each scan</li>
+      <li>Menu bar: <em>N</em> &#128276; <em>project-name</em></li>
+      <li>Click bell &rarr; dropdown grouped by project</li>
+      <li>Click project &rarr; jump to most recent signal</li>
+    </ul>
+    <div class="signal-line" style="margin-top:10px">
+      <span style="font-size:.7rem;color:#f0883e;margin-right:6px">consume</span>
+      <div class="dot o"></div><div class="dot o"></div><div class="dot o"></div>
+    </div>
+  </div>
+
+  <!-- Goto protocol -->
+  <div class="goto-box box">
+    <h2>&#8644; Cross-Window Focus Protocol (cc-overlord &rarr; extension)</h2>
+    <div class="goto-steps">
+      <div class="goto-step"><strong>1. Write</strong>cc-overlord writes terminal index to <code>signals/goto</code></div>
+      <div class="goto-step"><strong>2. Activate</strong><code>open -a "Visual Studio Code" &lt;workspace&gt;</code></div>
+      <div class="goto-step"><strong>3. Detect</strong>Extension's <code>fs.watch</code> detects goto file</div>
+      <div class="goto-step"><strong>4. Focus</strong>Extension reads index, calls <code>showTerminal(index)</code></div>
+      <div class="goto-step"><strong>5. Cleanup</strong>Extension deletes goto file</div>
+    </div>
+  </div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot create"></div> Signal created</div>
+  <div class="legend-item"><div class="legend-dot consume"></div> Signal consumed</div>
+  <div class="legend-item"><div class="legend-dot delete"></div> Signal expired / deleted (15m TTL)</div>
+  <div class="legend-item"><div class="legend-dot focus"></div> cc-overlord (menu bar)</div>
+  <div class="legend-item"><div class="legend-dot watch"></div> VS Code extension (watcher)</div>
+</div>
+
+<!-- Lifecycle -->
+<div class="lifecycle">
+  <div class="lc-card lc-create"><strong>Created</strong>Claude Code Stop hook &rarr; <code>touch .signal</code> file</div>
+  <div class="lc-card lc-consume"><strong>Consumed (Extension)</strong>User switches to terminal OR clicks status bar item</div>
+  <div class="lc-card lc-consume"><strong>Consumed (cc-overlord)</strong>User clicks menu item &rarr; triggers goto protocol</div>
+  <div class="lc-card lc-expire"><strong>Expired</strong>Both apps delete signals older than 15 minutes</div>
+</div>
+
+</body>
+</html>
