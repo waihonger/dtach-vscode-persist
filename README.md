@@ -102,7 +102,7 @@ The extension watches for signal files and shows a status bar indicator:
 - **"● N awaiting"** (yellow) — Claude finished a task
 - **"⚠ N awaiting"** (red) — Claude needs permission approval or hit an error
 - Click to see a list of awaiting terminals and jump to one (urgent signals sorted first)
-- Signals auto-clear when you switch to the terminal, focus the window, or after 15 minutes
+- Signals auto-clear when you switch to the terminal, focus the window, or after 4 hours (configurable via `DTACH_SIGNAL_STALE_HOURS` env var)
 
 ### Cross-window (CC Overlord)
 
