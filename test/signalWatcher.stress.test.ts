@@ -378,16 +378,16 @@ describe("Stress: Very long running session (memory/FD leak)", () => {
     const ctx = mockContext();
     watcher.start(ctx);
 
-    // Add a signal that is 16 minutes old (past 15-min stale threshold)
-    touchSignalWithAge(sigDir, 42, 16 * 60 * 1000);
+    // Add a signal that is 5 hours old (past 4-hour stale threshold)
+    touchSignalWithAge(sigDir, 42, 5 * 60 * 60 * 1000);
     (watcher as unknown as { onFile: (f: string) => void }).onFile("42.signal");
 
     const signals = (watcher as unknown as { signals: Map<number, unknown> }).signals;
     // onFile already checks stale threshold and won't add it
     expect(signals.has("42:complete")).toBe(false);
 
-    // But a 14-minute-old signal WILL be added and stay until updateStatusBar runs
-    touchSignalWithAge(sigDir, 43, 14 * 60 * 1000);
+    // But a 3-hour-old signal WILL be added and stay until updateStatusBar runs
+    touchSignalWithAge(sigDir, 43, 3 * 60 * 60 * 1000);
     (watcher as unknown as { onFile: (f: string) => void }).onFile("43.signal");
     expect(signals.has("43:complete")).toBe(true);
 

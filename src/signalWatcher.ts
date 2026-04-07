@@ -3,7 +3,8 @@ import * as path from "path";
 import * as vscode from "vscode";
 import type { TerminalManager } from "./terminalManager";
 
-const STALE_THRESHOLD_MS = 15 * 60 * 1000; // 15 minutes
+const DEFAULT_STALE_THRESHOLD_HOURS = 4;
+const STALE_THRESHOLD_MS = (Number(process.env.DTACH_SIGNAL_STALE_HOURS) || DEFAULT_STALE_THRESHOLD_HOURS) * 60 * 60 * 1000;
 const POLL_INTERVAL_MS = 10 * 1000; // 10 seconds
 
 const SIGNAL_TYPES = [".signal", ".permission", ".error"] as const;
