@@ -4,10 +4,11 @@ import {
   ensureSocketDir,
   listSockets,
   cleanupDeadSockets,
+  cleanupIdleWorkspaces,
   findNextIndex,
   createSocket,
 } from "./dtach";
-import { resolveSocketDir, resolveStartDirectory, socketPath, signalDir } from "./config";
+import { resolveSocketDir, resolveStartDirectory, socketPath, signalDir, IDLE_TIMEOUT_MS } from "./config";
 import { SignalWatcher } from "./signalWatcher";
 import { TerminalManager } from "./terminalManager";
 
@@ -37,6 +38,7 @@ export async function activate(
 
   ensureSocketDir(socketDir);
   cleanupDeadSockets(socketDir);
+  cleanupIdleWorkspaces(socketDir, IDLE_TIMEOUT_MS);
 
   // Write workspace metadata so cc-overlord knows the actual path
   const fs = require("fs") as typeof import("fs");

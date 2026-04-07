@@ -102,7 +102,53 @@ export function createSocket(
   });
 }
 
+export function killDtachProcess(sockPath: string): void {
+  let pids: number[];
+  try {
+    pids = execFileSync("pgrep", ["-f", `dtach -n ${sockPath}`], {
+      encoding: "utf8",
+      timeout: 5000,
+    })
+      .trim()
+      .split("\n")
+      .map((s) => parseInt(s, 10))
+      .filter((n) => n > 0);
+  } catch {
+    return; // no matching processes
+  }
+
+  for (const pid of pids) {
+    // Kill child processes (the shell) first
+    try {
+      const children = execFileSync("pgrep", ["-P", String(pid)], {
+        encoding: "utf8",
+        timeout: 5000,
+      })
+        .trim()
+        .split("\n")
+        .map((s) => parseInt(s, 10))
+        .filter((n) => n > 0);
+      for (const child of children) {
+        try {
+          process.kill(child, "SIGTERM");
+        } catch {
+          // already exited
+        }
+      }
+    } catch {
+      // no children or pgrep error
+    }
+    // Kill the dtach server process
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // already exited
+    }
+  }
+}
+
 export function removeSocket(sockPath: string): void {
+  killDtachProcess(sockPath);
   try {
     fs.unlinkSync(sockPath);
   } catch {
@@ -110,21 +156,77 @@ export function removeSocket(sockPath: string): void {
   }
 }
 
+export function isProcessBehindSocket(sockPath: string): boolean {
+  try {
+    execFileSync("pgrep", ["-f", `dtach -n ${sockPath}`], {
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function cleanupDeadSockets(dir: string): void {
-  // Note: dtach's -z flag auto-removes sockets on normal process exit.
-  // Orphaned sockets only occur on hard crashes and are cleaned by
-  // $TMPDIR cleanup on reboot. This function removes socket files
-  // that no longer exist on disk (e.g. partially deleted).
   try {
     const files = fs.readdirSync(dir);
     for (const f of files) {
       if (!f.endsWith(".sock")) continue;
       const fullPath = path.join(dir, f);
-      if (!socketFileExists(fullPath)) {
+      if (!isProcessBehindSocket(fullPath)) {
         removeSocket(fullPath);
       }
     }
   } catch {
     // dir may not exist
+  }
+}
+
+export function cleanupIdleWorkspaces(
+  currentSocketDir: string,
+  maxIdleMs: number,
+): void {
+  const parentDir = path.dirname(currentSocketDir);
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(parentDir);
+  } catch {
+    return;
+  }
+
+  const now = Date.now();
+
+  for (const entry of entries) {
+    const workspaceDir = path.join(parentDir, entry);
+    if (workspaceDir === currentSocketDir) continue;
+
+    // Only process directories
+    try {
+      if (!fs.statSync(workspaceDir).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+
+    // Check if workspace has any sockets worth cleaning
+    const sockets = listSockets(workspaceDir);
+    if (sockets.length === 0) continue;
+
+    // Check workspace.json mtime — if missing, treat as stale
+    const metaPath = path.join(workspaceDir, "workspace.json");
+    let isStale = true;
+    try {
+      const stat = fs.statSync(metaPath);
+      isStale = now - stat.mtimeMs > maxIdleMs;
+    } catch {
+      // No workspace.json — treat as stale
+    }
+
+    if (!isStale) continue;
+
+    // Kill all dtach processes and remove sockets for this workspace
+    for (const sock of sockets) {
+      removeSocket(sock.socketPath);
+    }
   }
 }

@@ -5,6 +5,11 @@ import * as vscode from "vscode";
 
 export const KILL_SOCKET_DELAY_MS = 300;
 export const SOCKET_DIR_PREFIX = "dtach-persist";
+export const IDLE_TIMEOUT_MS =
+  (parseInt(process.env.DTACH_IDLE_TIMEOUT_HOURS || "", 10) || 72) *
+  60 *
+  60 *
+  1000;
 
 export function sanitizeName(name: string): string {
   let sanitized = name.replace(/[^a-zA-Z0-9_-]/g, "_");
