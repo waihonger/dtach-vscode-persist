@@ -42,10 +42,10 @@ sudo apt install dtach    # Ubuntu/Debian
 
 ### 2. Install the extension
 
-Download the `.vsix` from [Releases](https://github.com/waihonger/dtach-vscode-persist/releases) and install:
+Download the latest `.vsix` from [Releases](https://github.com/waihonger/dtach-vscode-persist/releases) and install:
 
 ```bash
-code --install-extension dtach-persist-0.1.0.vsix
+code --install-extension dtach-persist-*.vsix
 ```
 
 ### 3. Set as default terminal (optional)
@@ -92,9 +92,9 @@ Now every new terminal is automatically persistent. No other settings are needed
 | **Architecture** | One socket per tab | Sessions, windows, panes, linked sessions |
 | **Extension size** | ~6KB | ~10KB+ |
 
-## Claude Code notifications
+## Claude Code notifications (optional)
 
-Know when Claude Code finishes a task without checking each terminal tab.
+Know when Claude Code finishes a task without checking each terminal tab. Requires [Claude Code](https://claude.ai/code) with hooks support.
 
 ### In-window (built-in)
 
